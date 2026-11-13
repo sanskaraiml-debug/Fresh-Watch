@@ -869,5 +869,442 @@ def health_bar(n_high, n_med, n_safe):
     )
     legend = "".join(
         f'<span><i style="background:{PALETTE[k]["main"]}"></i>{label} · {n}</span>'
-        for k, n,
+        for k, n, label in parts
     )
+    return flat(f'<div class="health">{segs}</div><div class="legend">{legend}</div>')
+
+
+def section(title, sub):
+    return flat(f'<div class="sec"><div class="st">{title}</div><div class="ss">{sub}</div></div>')
+
+
+def product_card(r):
+    pal = PALETTE[r["risk"]]
+    chance = int(r["wastage_chance"])
+    days = int(r["days_left"])
+    if days <= 0:
+        when = "Expires today"
+    elif days == 1:
+        when = "Expires tomorrow"
+    else:
+        when = f"{days} days left"
+    loss = ""
+    if ("est_loss" in r.index and pd.notna(r["est_loss"]) and r["est_loss"] > 0
+            and r["risk"] != "Safe"):
+        loss = f'<div class="loss">About ₹{int(r["est_loss"]):,} could go to waste</div>'
+    mine_tag = ""
+    if "mine" in r.index and bool(r["mine"]):
+        mine_tag = '<span class="mine">Added by you</span>'
+    return flat(
+        f'<div class="pcard" style="--c:{pal["main"]};--soft:{pal["soft"]};--tx:{pal["text"]}">'
+        f'<div class="ptop"><div class="emo">{icon_for(r["product"])}</div><div class="chip">{when}</div></div>'
+        f'<div class="pname">{html.escape(str(r["product"]))}{mine_tag}</div>'
+        f'<div class="psub">{int(r["stock"])} in stock · {r["daily_sales"]:.1f} sold/day</div>'
+        f'<div class="meter"><div style="width:{chance}%"></div></div>'
+        f'<div class="pfoot"><span>Chance it goes to waste</span><b>{chance}%</b></div>'
+        f'<div class="todo">{short_action(r["risk"], days)}</div>{loss}</div>'
+    )
+
+
+# ------------------------------------------------------------------
+# Chatbot Logic
+# ------------------------------------------------------------------
+def pretty(df):
+    return df.rename(
+        columns={
+            "product": "Product", "stock": "Stock", "daily_sales": "Daily sales",
+            "days_left": "Days left", "wastage_chance": "Wastage chance (%)",
+            "risk": "Risk", "action": "Suggested action",
+            "price": "Price (₹)", "est_loss": "Estimated loss (₹)",
+        }
+    ).copy()
+
+
+def chatbot_reply(question, data):
+    q = question.lower()
+    high = data[data["risk"] == "High"]
+    medium = data[data["risk"] == "Medium"]
+    safe = data[data["risk"] == "Safe"]
+
+    if any(w in q for w in ["discount", "action", "what should", "do today"]):
+        if high.empty:
+            return "No product needs a discount right now.", None
+        return "These products need action today:", pretty(high[["product", "days_left", "action"]])
+    if any(w in q for w in ["money", "loss", "rupee", "cost", "₹", "worth"]):
+        if "est_loss" not in data.columns:
+            return "Add a price column to your CSV to see money at risk.", None
+        total = int(high["est_loss"].sum())
+        return (f"Estimated money at risk in high-risk items: **₹{total:,}**.",
+                pretty(high[["product", "est_loss"]]) if not high.empty else None)
+    if any(w in q for w in ["urgent", "first", "most", "priority"]):
+        if data.empty:
+            return "No products found.", None
+        top = data.iloc[0]
+        return (f"Most urgent: **{top['product']}** with a {int(top['wastage_chance'])}% wastage chance "
+                f"and {int(top['days_left'])} days left. {top['action']}."), None
+    if any(w in q for w in ["high", "risk", "waste"]):
+        if high.empty:
+            return "No high-risk products right now.", None
+        return (f"{len(high)} product(s) are at high wastage risk:",
+                pretty(high[["product", "stock", "days_left", "wastage_chance"]]))
+    if any(w in q for w in ["medium", "watch"]):
+        if medium.empty:
+            return "No medium-risk products right now.", None
+        return "These products need watching:", pretty(medium[["product", "stock", "days_left", "wastage_chance"]])
+    if any(w in q for w in ["expir", "10 days", "soon", "tomorrow"]):
+        soon = data[data["days_left"] <= 10].sort_values("days_left")
+        if soon.empty:
+            return "Nothing expires within 10 days.", None
+        return "Products expiring within 10 days:", pretty(soon[["product", "days_left", "stock", "risk"]])
+    if "safe" in q:
+        if safe.empty:
+            return "No products are in the safe range.", None
+        return "These products are safe:", pretty(safe[["product", "stock", "days_left"]])
+    if any(w in q for w in ["summary", "how many", "overview", "count"]):
+        return (f"Total {len(data)} products: **{len(high)} high**, **{len(medium)} medium**, "
+                f"**{len(safe)} safe**."), None
+    return ("You can ask: Which products are at high risk? What should I discount today? "
+            "What is expiring soon? What is most urgent? How much money is at risk?"), None
+
+
+# ------------------------------------------------------------------
+# Sidebar: Inventory & Settings
+# ------------------------------------------------------------------
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("### 📦 Inventory Data")
+    uploaded = st.file_uploader("Upload Inventory CSV", type="csv")
+
+    # Sample inventory download with rich default set
+    sample_data = get_default_inventory().head(15)
+    st.download_button(
+        "📥 Download Sample CSV",
+        sample_data.to_csv(index=False),
+        "freshwatch_sample_inventory.csv",
+        "text/csv",
+    )
+
+    st.markdown("---")
+    st.markdown("### ⚙️ Alert Thresholds")
+    high_thr = st.number_input("Act today risk threshold (%)", min_value=50, max_value=95, value=80, step=5)
+    med_thr = st.number_input("Keep watching risk threshold (%)", min_value=10, max_value=90, value=50, step=5)
+    if med_thr >= high_thr:
+        med_thr = high_thr - 5
+        st.caption("Adjusted so watch level remains below action level.")
+
+    st.markdown("---")
+    with st.expander("ℹ️ About the ML Model"):
+        st.write(
+            "**Architecture**: Random Forest Classifier  \n"
+            "**Key Features**: Stock, Daily Sales, Days to Expiry, Expected Sales, and Projected Leftover.  \n"
+            "**Goal**: Classify whether stock will spoil or reach expiry before complete sale.  \n"
+            "**Training Data**: 5,000 synthetic supermarket transactions."
+        )
+
+base_inventory, error = load_inventory(uploaded)
+if error:
+    st.sidebar.error(error)
+    base_inventory, _ = load_inventory(None)
+    st.sidebar.info("Showing standard supermarket inventory instead.")
+
+# Combine the main list with the products the user added
+base_inventory = base_inventory.copy()
+base_inventory["mine"] = False
+if st.session_state.my_products:
+    mine_df = pd.DataFrame(st.session_state.my_products)
+    mine_df["mine"] = True
+    inventory = pd.concat([base_inventory, mine_df], ignore_index=True)
+else:
+    inventory = base_inventory
+
+data = add_predictions(inventory, high_thr, med_thr)
+high = data[data["risk"] == "High"]
+medium = data[data["risk"] == "Medium"]
+safe = data[data["risk"] == "Safe"]
+order = ["High", "Medium", "Safe"]
+
+# ------------------------------------------------------------------
+# Top of page (Hero & KPI Tiles)
+# ------------------------------------------------------------------
+st.markdown(HERO, unsafe_allow_html=True)
+
+t1, t2, t3, t4 = st.columns(4)
+t1.markdown(tile("Act today", len(high), "urgent discount / return", PALETTE["High"]["main"]),
+            unsafe_allow_html=True)
+t2.markdown(tile("Keep watching", len(medium), "moderate wastage risk", PALETTE["Medium"]["main"]),
+            unsafe_allow_html=True)
+t3.markdown(tile("Looking fine", len(safe), "expected to sell fully", PALETTE["Safe"]["main"]),
+            unsafe_allow_html=True)
+if "est_loss" in high.columns:
+    t4.markdown(tile("Money at risk", f"₹{int(high['est_loss'].sum()):,}", "in critical items", "#e67e22"),
+                unsafe_allow_html=True)
+else:
+    t4.markdown(tile("Units at risk", int(high["stock"].sum()), "units in critical items", "#e67e22"),
+                unsafe_allow_html=True)
+
+st.markdown(health_bar(len(high), len(medium), len(safe)), unsafe_allow_html=True)
+
+# ------------------------------------------------------------------
+# Product cards: Visual Shelf Alerts
+# ------------------------------------------------------------------
+st.markdown(section("Act today", "These items are projected to expire before selling out."), unsafe_allow_html=True)
+if high.empty:
+    st.markdown('<div class="empty">🎉 Nothing urgent today! Your inventory shelves are healthy.</div>',
+                unsafe_allow_html=True)
+else:
+    cards = "".join(product_card(r) for _, r in high.head(12).iterrows())
+    st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
+    if len(high) > 12:
+        st.caption(f"+ {len(high) - 12} more products need action. Check the 'All products' tab for the full list.")
+
+if not medium.empty:
+    st.markdown(section("Keep an eye on", "Moderate risk: consider moving them to prominent shelves."),
+                unsafe_allow_html=True)
+    cards = "".join(product_card(r) for _, r in medium.head(8).iterrows())
+    st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
+    if len(medium) > 8:
+        st.caption(f"+ {len(medium) - 8} more products under watch in 'All products'.")
+
+if not safe.empty:
+    st.markdown(section("Looking fine", "These products have healthy sales velocity."),
+                unsafe_allow_html=True)
+    chips = "".join(
+        f'<span>{icon_for(p)} {html.escape(str(p))}{" ★" if m else ""}</span>'
+        for p, m in zip(safe["product"].head(20), safe["mine"].head(20))
+    )
+    st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
+
+# ------------------------------------------------------------------
+# Interactive Tools & Modules
+# ------------------------------------------------------------------
+st.markdown(section("Interactive Tools", "Add your products, inspect inventory, test a product, chat with AI, or view metrics."),
+            unsafe_allow_html=True)
+tab_add, tab_table, tab_predict, tab_chat, tab_perf = st.tabs(
+    ["➕ Add my product", "📋 All products", "🔍 Try a product", "💬 Ask the assistant", "📊 Model accuracy"]
+)
+
+# ---------------- Add my product ----------------
+with tab_add:
+    col_form, col_res = st.columns(2, gap="large")
+    with col_form:
+        with st.form("add_product_form"):
+            st.markdown("#### Add your own product")
+            st.text_input("Product name", key="np_name", placeholder="e.g. Brown Bread (400g)")
+            a, b = st.columns(2)
+            a.number_input("Stock quantity", min_value=0, value=20, step=1, key="np_stock")
+            b.number_input("Average sales per day", min_value=0.0, value=2.0, step=0.5, key="np_sales")
+            c, d = st.columns(2)
+            c.number_input("Days left to expiry", min_value=0, value=7, step=1, key="np_days")
+            d.number_input("Price per unit (₹)", min_value=0.0, value=50.0, step=5.0, key="np_price")
+            st.form_submit_button("Add to my inventory", type="primary", on_click=add_product_callback)
+
+    with col_res:
+        msg = st.session_state.add_msg
+        if msg:
+            if msg[0] == "success":
+                st.success(msg[1])
+            else:
+                st.error(msg[1])
+            st.session_state.add_msg = None
+        last = st.session_state.last_added
+        if last is not None:
+            preview = add_predictions(pd.DataFrame([{**last, "mine": True}]), high_thr, med_thr).iloc[0]
+            st.markdown(f'<div class="grid">{product_card(preview)}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="empty">Fill in the form and press <b>Add to my inventory</b>. '
+                        "Your product will get a prediction here and join the lists above.</div>",
+                        unsafe_allow_html=True)
+
+    st.markdown(section("Your added products", "Products you added stay while this page is open."),
+                unsafe_allow_html=True)
+    if not st.session_state.my_products:
+        st.markdown('<div class="empty">You have not added any products yet.</div>', unsafe_allow_html=True)
+    else:
+        mine_table = pd.DataFrame(st.session_state.my_products)[["product", "stock", "daily_sales", "days_left", "price"]]
+        show_df(pretty(mine_table))
+        st.selectbox("Choose a product to remove", [p["product"] for p in st.session_state.my_products],
+                     key="rm_name")
+        r1, r2, r3 = st.columns(3)
+        r1.button("Remove selected", on_click=remove_product_callback, key="btn_remove")
+        r2.button("Clear all my products", on_click=clear_products_callback, key="btn_clear")
+        r3.download_button("📥 Save my products (CSV)", mine_table.to_csv(index=False),
+                           "my_products.csv", "text/csv")
+
+    st.markdown(section("Bring back saved products",
+                        "A page refresh clears your list. Upload the CSV you saved to restore it."),
+                unsafe_allow_html=True)
+    saved = st.file_uploader("Saved products CSV", type="csv", key="saved_csv")
+    if saved is not None:
+        sig = (saved.name, saved.size)
+        if st.session_state.get("saved_sig") != sig:
+            st.session_state.saved_sig = sig
+            saved_df, saved_err = read_product_csv(saved)
+            if saved_err:
+                st.error(saved_err)
+            else:
+                if "price" not in saved_df.columns:
+                    saved_df["price"] = float("nan")
+                rows = [
+                    {"product": str(r.product).strip(), "stock": int(r.stock),
+                     "daily_sales": float(r.daily_sales), "days_left": int(r.days_left),
+                     "price": float(r.price)}
+                    for r in saved_df.itertuples() if str(r.product).strip()
+                ]
+                upsert_my_products(rows)
+                st.session_state.add_msg = ("success", f"Loaded {len(rows)} saved products.")
+                st.rerun()
+
+# ---------------- All products ----------------
+with tab_table:
+    f_col, _ = st.columns([1, 3])
+    level = f_col.selectbox("Filter by risk level", ["All"] + order)
+    view = data if level == "All" else data[data["risk"] == level]
+    shown = view.copy()
+    shown["product"] = [
+        f"{icon_for(p)} {p}" + (" ★" if m else "") for p, m in zip(shown["product"], shown["mine"])
+    ]
+    table_cols = ["product", "stock", "daily_sales", "days_left"]
+    if "price" in shown.columns:
+        table_cols += ["price", "est_loss"]
+    table_cols += ["wastage_chance", "risk", "action"]
+    show_df(
+        pretty(shown[table_cols]),
+        column_config={
+            "Wastage chance (%)": st.column_config.ProgressColumn(
+                "Chance of waste", min_value=0, max_value=100, format="%d%%"
+            ),
+            "Daily sales": st.column_config.NumberColumn(format="%.1f"),
+        },
+    )
+    st.caption("★ marks products you added yourself.")
+    st.download_button("📥 Download Current Report (CSV)", view.drop(columns=["mine"]).to_csv(index=False),
+                       "wastage_report.csv", "text/csv")
+
+# ---------------- Try a product ----------------
+with tab_predict:
+    col_form, col_res = st.columns(2, gap="large")
+    with col_form:
+        with st.form("single_product"):
+            st.markdown("#### Test a Single Product")
+            name = st.text_input("Product name", "Organic Alphonso Mangoes")
+            a, b = st.columns(2)
+            stock_in = a.number_input("Stock quantity", min_value=0, value=30, step=1)
+            sales_in = b.number_input("Sold per day", min_value=0.0, value=2.0, step=0.5)
+            c, d = st.columns(2)
+            days_in = c.number_input("Days left to expiry", min_value=0, value=5, step=1)
+            price_in = d.number_input("Price per unit (₹)", min_value=0.0, value=80.0, step=5.0)
+            go = st.form_submit_button("Predict Expiry Risk", type="primary")
+    with col_res:
+        if go:
+            single = pd.DataFrame(
+                [{"product": name or "Product", "stock": stock_in, "daily_sales": sales_in,
+                  "days_left": days_in, "price": price_in}]
+            )
+            res = add_predictions(single, high_thr, med_thr).iloc[0]
+            expected = sales_in * days_in
+            left_units = max(stock_in - expected, 0)
+            st.markdown(f'<div class="grid">{product_card(res)}</div>', unsafe_allow_html=True)
+            st.caption(f"Projected sales: {expected:.0f} units before expiry | "
+                       f"Estimated leftover: {left_units:.0f} units (₹{left_units * price_in:,.0f}).")
+        else:
+            st.markdown('<div class="empty">Enter product details on the left and click '
+                        '<b>Predict Expiry Risk</b> to see the AI diagnosis.</div>', unsafe_allow_html=True)
+
+# ---------------- Chat ----------------
+with tab_chat:
+    if "messages" not in st.session_state:
+        st.session_state.messages = [
+            {"role": "assistant",
+             "text": "Hello! I am your FreshWatch assistant. Ask me anything about stock, discounts, expiring items, or financial risk.",
+             "table": None}
+        ]
+
+    st.markdown("##### Quick Queries")
+    q_cols = st.columns(4)
+    quick = ["Which products are at high risk?", "What should I discount today?",
+             "What is expiring soon?", "How much money is at risk?"]
+    clicked = None
+    for col, text in zip(q_cols, quick):
+        if col.button(text, key=f"q_{text}"):
+            clicked = text
+
+    typed = st.chat_input("Type your question (e.g., 'What is most urgent?' or 'Show money at risk')")
+    question = clicked or typed
+    if question:
+        st.session_state.messages.append({"role": "user", "text": question, "table": None})
+        answer, table = chatbot_reply(question, data)
+        st.session_state.messages.append({"role": "assistant", "text": answer, "table": table})
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["text"])
+            if msg["table"] is not None:
+                show_df(msg["table"])
+
+# ---------------- Model accuracy ----------------
+with tab_perf:
+    rf_row = next(m for m in metrics["comparison"] if m["model"] == "Random Forest")
+    st.markdown(
+        f"**Accuracy:** The Random Forest model achieved **{round(rf_row['accuracy'] * 100)}% accuracy** "
+        f"on {metrics['test_rows']:,} unseen supermarket test records."
+    )
+    p1, p2, p3, p4 = st.columns(4)
+    p1.metric("Accuracy", f"{rf_row['accuracy'] * 100:.1f}%", help="Share of all predictions that were correct")
+    p2.metric("Precision", f"{rf_row['precision'] * 100:.1f}%", help="When it flags high risk, how often it is truly at risk")
+    p3.metric("Recall", f"{rf_row['recall'] * 100:.1f}%", help="Percentage of actual wasted items successfully caught")
+    p4.metric("F1-score", f"{rf_row['f1'] * 100:.1f}%", help="Harmonic balance between precision and recall")
+
+    g1, g2 = st.columns(2, gap="large")
+    with g1:
+        st.markdown(section("Confusion Matrix", "Evaluated on the 20% test partition."),
+                    unsafe_allow_html=True)
+        cm = metrics["confusion_matrix"]
+        cm_table = pd.DataFrame(
+            {
+                "Actual Status": ["Actually Sold", "Actually Wasted"],
+                "Predicted Sold": [cm[0][0], cm[1][0]],
+                "Predicted Wasted": [cm[0][1], cm[1][1]],
+            }
+        )
+        show_df(cm_table)
+    with g2:
+        st.markdown(section("Feature Importance", "Which parameters weigh the most in predictions:"),
+                    unsafe_allow_html=True)
+        nice = {"stock": "Stock Quantity", "daily_sales": "Daily Sales", "days_left": "Days Left",
+                "expected_sales": "Expected Sales", "leftover": "Leftover Units"}
+        imp = pd.DataFrame(
+            {"Feature": [nice[k] for k in metrics["feature_importance"]],
+             "Importance": list(metrics["feature_importance"].values())}
+        )
+        axis_color = "#cbd5d0" if is_dark else "#1f2a24"
+        imp_chart = (
+            alt.Chart(imp)
+            .mark_bar(size=16, cornerRadiusEnd=4, color=GREEN)
+            .encode(
+                x=alt.X("Importance:Q", axis=None),
+                y=alt.Y("Feature:N", sort="-x", title=None,
+                        axis=alt.Axis(labelColor=axis_color, labelFontSize=12)),
+                tooltip=["Feature", "Importance"]
+            )
+            .properties(height=200)
+            .configure_axis(grid=False, domain=False, ticks=False)
+            .configure_view(strokeWidth=0)
+        )
+        show_chart(imp_chart)
+
+    st.markdown(section("Model Benchmarks", "Comparison across three machine learning algorithms:"),
+                unsafe_allow_html=True)
+    comp = pd.DataFrame(metrics["comparison"]).rename(
+        columns={"model": "Model", "accuracy": "Accuracy", "precision": "Precision",
+                 "recall": "Recall", "f1": "F1-score"}
+    )
+    for c in ["Accuracy", "Precision", "Recall", "F1-score"]:
+        comp[c] = (comp[c] * 100).round(1)
+    show_df(comp, column_config={c: st.column_config.NumberColumn(format="%.1f%%")
+                                 for c in ["Accuracy", "Precision", "Recall", "F1-score"]})
+
+st.markdown(
+    '<div class="foot"><b>FreshWatch</b> · Supermarket Expiry & Wastage Prediction System · '
+    "Built with Python, Scikit-Learn & Streamlit</div>",
+    unsafe_allow_html=True,
+)
