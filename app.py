@@ -10,6 +10,16 @@ import streamlit as st
 st.set_page_config(page_title="FreshWatch", page_icon="🥬", layout="wide")
 
 # ------------------------------------------------------------------
+# Session memory for products the user adds
+# ------------------------------------------------------------------
+if "my_products" not in st.session_state:
+    st.session_state.my_products = []
+if "last_added" not in st.session_state:
+    st.session_state.last_added = None
+if "add_msg" not in st.session_state:
+    st.session_state.add_msg = None
+
+# ------------------------------------------------------------------
 # Sidebar: Theme Selection (Dark by default)
 # ------------------------------------------------------------------
 st.sidebar.markdown("### 🎨 Display Theme")
@@ -117,7 +127,9 @@ st.markdown(
     border-right: 1px solid var(--line) !important;
 }}
 
-.stApp, .stApp p, .stApp label, .stApp li, .stApp span, .stApp div {{
+/* Font: applied to text elements only (NOT to every span/div, which breaks the icons) */
+.stApp, .stApp p, .stApp label, .stApp li, .stApp button, .stApp input,
+.stApp textarea, .stApp [role="tab"] {{
     font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif !important;
 }}
 
@@ -328,6 +340,19 @@ header[data-testid="stHeader"] {{
     color: var(--ink) !important;
     margin-top: 12px;
 }}
+.pcard .mine {{
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: .64rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 99px;
+    margin-left: 8px;
+    background: var(--primary);
+    color: #ffffff !important;
+    vertical-align: middle;
+}}
 .pcard .psub {{
     color: var(--muted) !important;
     font-size: .86rem;
@@ -531,6 +556,19 @@ div[data-baseweb="select"] * {{
     border-top: 1px solid var(--line);
     padding-top: 20px;
 }}
+
+/* ---------- ICON FONT FIX (keeps upload / arrow / chat icons from showing as text) ---------- */
+.stApp [data-testid="stIconMaterial"],
+.stApp span[data-testid="stIconMaterial"],
+.stApp .material-symbols-rounded,
+.stApp span.material-symbols-rounded {{
+    font-family: "Material Symbols Rounded", "Material Symbols Outlined" !important;
+    font-weight: normal !important;
+    font-style: normal !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    font-feature-settings: "liga" !important;
+}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -701,11 +739,10 @@ def get_default_inventory():
     ])
 
 
-def load_inventory(uploaded):
-    if uploaded is None:
-        return get_default_inventory(), None
+def read_product_csv(file):
+    """Read a CSV with product, stock, daily_sales, days_left (+ optional price)."""
     try:
-        df = pd.read_csv(uploaded)
+        df = pd.read_csv(file)
         df.columns = [c.strip().lower() for c in df.columns]
         missing = [c for c in REQUIRED if c not in df.columns]
         if missing:
@@ -720,6 +757,58 @@ def load_inventory(uploaded):
         return df, None
     except Exception as exc:
         return None, f"Could not read the CSV: {exc}"
+
+
+def load_inventory(uploaded):
+    if uploaded is None:
+        return get_default_inventory(), None
+    return read_product_csv(uploaded)
+
+
+# ------------------------------------------------------------------
+# "Add my product" logic (runs as callbacks, before the page redraws)
+# ------------------------------------------------------------------
+def upsert_my_products(rows):
+    """Add products to the user's list. Same name = update that product."""
+    index = {p["product"].strip().lower(): i for i, p in enumerate(st.session_state.my_products)}
+    for row in rows:
+        key = row["product"].strip().lower()
+        if key in index:
+            st.session_state.my_products[index[key]] = row
+        else:
+            st.session_state.my_products.append(row)
+            index[key] = len(st.session_state.my_products) - 1
+
+
+def add_product_callback():
+    name = str(st.session_state.get("np_name", "")).strip()
+    if not name:
+        st.session_state.add_msg = ("error", "Please type a product name first.")
+        return
+    row = {
+        "product": name,
+        "stock": int(st.session_state.np_stock),
+        "daily_sales": float(st.session_state.np_sales),
+        "days_left": int(st.session_state.np_days),
+        "price": float(st.session_state.np_price),
+    }
+    upsert_my_products([row])
+    st.session_state.last_added = row
+    st.session_state.add_msg = ("success", f"Added “{name}” to your inventory. It now shows in the lists above.")
+    st.session_state.np_name = ""
+
+
+def remove_product_callback():
+    name = st.session_state.get("rm_name")
+    st.session_state.my_products = [p for p in st.session_state.my_products if p["product"] != name]
+    last = st.session_state.last_added
+    if last is not None and last["product"] == name:
+        st.session_state.last_added = None
+
+
+def clear_products_callback():
+    st.session_state.my_products = []
+    st.session_state.last_added = None
 
 
 # ------------------------------------------------------------------
@@ -780,349 +869,4 @@ def health_bar(n_high, n_med, n_safe):
     )
     legend = "".join(
         f'<span><i style="background:{PALETTE[k]["main"]}"></i>{label} · {n}</span>'
-        for k, n, label in parts
-    )
-    return flat(f'<div class="health">{segs}</div><div class="legend">{legend}</div>')
-
-
-def section(title, sub):
-    return flat(f'<div class="sec"><div class="st">{title}</div><div class="ss">{sub}</div></div>')
-
-
-def product_card(r):
-    pal = PALETTE[r["risk"]]
-    chance = int(r["wastage_chance"])
-    days = int(r["days_left"])
-    if days <= 0:
-        when = "Expires today"
-    elif days == 1:
-        when = "Expires tomorrow"
-    else:
-        when = f"{days} days left"
-    loss = ""
-    if ("est_loss" in r.index and pd.notna(r["est_loss"]) and r["est_loss"] > 0
-            and r["risk"] != "Safe"):
-        loss = f'<div class="loss">About ₹{int(r["est_loss"]):,} could go to waste</div>'
-    return flat(
-        f'<div class="pcard" style="--c:{pal["main"]};--soft:{pal["soft"]};--tx:{pal["text"]}">'
-        f'<div class="ptop"><div class="emo">{icon_for(r["product"])}</div><div class="chip">{when}</div></div>'
-        f'<div class="pname">{html.escape(str(r["product"]))}</div>'
-        f'<div class="psub">{int(r["stock"])} in stock · {r["daily_sales"]:.1f} sold/day</div>'
-        f'<div class="meter"><div style="width:{chance}%"></div></div>'
-        f'<div class="pfoot"><span>Chance it goes to waste</span><b>{chance}%</b></div>'
-        f'<div class="todo">{short_action(r["risk"], days)}</div>{loss}</div>'
-    )
-
-
-# ------------------------------------------------------------------
-# Chatbot Logic
-# ------------------------------------------------------------------
-def pretty(df):
-    return df.rename(
-        columns={
-            "product": "Product", "stock": "Stock", "daily_sales": "Daily sales",
-            "days_left": "Days left", "wastage_chance": "Wastage chance (%)",
-            "risk": "Risk", "action": "Suggested action",
-            "price": "Price (₹)", "est_loss": "Estimated loss (₹)",
-        }
-    ).copy()
-
-
-def chatbot_reply(question, data):
-    q = question.lower()
-    high = data[data["risk"] == "High"]
-    medium = data[data["risk"] == "Medium"]
-    safe = data[data["risk"] == "Safe"]
-
-    if any(w in q for w in ["discount", "action", "what should", "do today"]):
-        if high.empty:
-            return "No product needs a discount right now.", None
-        return "These products need action today:", pretty(high[["product", "days_left", "action"]])
-    if any(w in q for w in ["money", "loss", "rupee", "cost", "₹", "worth"]):
-        if "est_loss" not in data.columns:
-            return "Add a price column to your CSV to see money at risk.", None
-        total = int(high["est_loss"].sum())
-        return (f"Estimated money at risk in high-risk items: **₹{total:,}**.",
-                pretty(high[["product", "est_loss"]]) if not high.empty else None)
-    if any(w in q for w in ["urgent", "first", "most", "priority"]):
-        if data.empty:
-            return "No products found.", None
-        top = data.iloc[0]
-        return (f"Most urgent: **{top['product']}** with a {int(top['wastage_chance'])}% wastage chance "
-                f"and {int(top['days_left'])} days left. {top['action']}."), None
-    if any(w in q for w in ["high", "risk", "waste"]):
-        if high.empty:
-            return "No high-risk products right now.", None
-        return (f"{len(high)} product(s) are at high wastage risk:",
-                pretty(high[["product", "stock", "days_left", "wastage_chance"]]))
-    if any(w in q for w in ["medium", "watch"]):
-        if medium.empty:
-            return "No medium-risk products right now.", None
-        return "These products need watching:", pretty(medium[["product", "stock", "days_left", "wastage_chance"]])
-    if any(w in q for w in ["expir", "10 days", "soon", "tomorrow"]):
-        soon = data[data["days_left"] <= 10].sort_values("days_left")
-        if soon.empty:
-            return "Nothing expires within 10 days.", None
-        return "Products expiring within 10 days:", pretty(soon[["product", "days_left", "stock", "risk"]])
-    if "safe" in q:
-        if safe.empty:
-            return "No products are in the safe range.", None
-        return "These products are safe:", pretty(safe[["product", "stock", "days_left"]])
-    if any(w in q for w in ["summary", "how many", "overview", "count"]):
-        return (f"Total {len(data)} products: **{len(high)} high**, **{len(medium)} medium**, "
-                f"**{len(safe)} safe**."), None
-    return ("You can ask: Which products are at high risk? What should I discount today? "
-            "What is expiring soon? What is most urgent? How much money is at risk?"), None
-
-
-# ------------------------------------------------------------------
-# Sidebar: Inventory & Settings
-# ------------------------------------------------------------------
-with st.sidebar:
-    st.markdown("---")
-    st.markdown("### 📦 Inventory Data")
-    uploaded = st.file_uploader("Upload Inventory CSV", type="csv")
-
-    # Sample inventory download with rich default set
-    sample_data = get_default_inventory().head(15)
-    st.download_button(
-        "📥 Download Sample CSV",
-        sample_data.to_csv(index=False),
-        "freshwatch_sample_inventory.csv",
-        "text/csv",
-    )
-
-    st.markdown("---")
-    st.markdown("### ⚙️ Alert Thresholds")
-    high_thr = st.number_input("Act today risk threshold (%)", min_value=50, max_value=95, value=80, step=5)
-    med_thr = st.number_input("Keep watching risk threshold (%)", min_value=10, max_value=90, value=50, step=5)
-    if med_thr >= high_thr:
-        med_thr = high_thr - 5
-        st.caption("Adjusted so watch level remains below action level.")
-
-    st.markdown("---")
-    with st.expander("ℹ️ About the ML Model"):
-        st.write(
-            "**Architecture**: Random Forest Classifier  \n"
-            "**Key Features**: Stock, Daily Sales, Days to Expiry, Expected Sales, and Projected Leftover.  \n"
-            "**Goal**: Classify whether stock will spoil or reach expiry before complete sale.  \n"
-            "**Training Data**: 5,000 synthetic supermarket transactions."
-        )
-
-inventory, error = load_inventory(uploaded)
-if error:
-    st.sidebar.error(error)
-    inventory, _ = load_inventory(None)
-    st.sidebar.info("Showing standard supermarket inventory instead.")
-
-data = add_predictions(inventory, high_thr, med_thr)
-high = data[data["risk"] == "High"]
-medium = data[data["risk"] == "Medium"]
-safe = data[data["risk"] == "Safe"]
-order = ["High", "Medium", "Safe"]
-
-# ------------------------------------------------------------------
-# Top of page (Hero & KPI Tiles)
-# ------------------------------------------------------------------
-st.markdown(HERO, unsafe_allow_html=True)
-
-t1, t2, t3, t4 = st.columns(4)
-t1.markdown(tile("Act today", len(high), "urgent discount / return", PALETTE["High"]["main"]),
-            unsafe_allow_html=True)
-t2.markdown(tile("Keep watching", len(medium), "moderate wastage risk", PALETTE["Medium"]["main"]),
-            unsafe_allow_html=True)
-t3.markdown(tile("Looking fine", len(safe), "expected to sell fully", PALETTE["Safe"]["main"]),
-            unsafe_allow_html=True)
-if "est_loss" in high.columns:
-    t4.markdown(tile("Money at risk", f"₹{int(high['est_loss'].sum()):,}", "in critical items", "#e67e22"),
-                unsafe_allow_html=True)
-else:
-    t4.markdown(tile("Units at risk", int(high["stock"].sum()), "units in critical items", "#e67e22"),
-                unsafe_allow_html=True)
-
-st.markdown(health_bar(len(high), len(medium), len(safe)), unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# Product cards: Visual Shelf Alerts
-# ------------------------------------------------------------------
-st.markdown(section("Act today", "These items are projected to expire before selling out."), unsafe_allow_html=True)
-if high.empty:
-    st.markdown('<div class="empty">🎉 Nothing urgent today! Your inventory shelves are healthy.</div>',
-                unsafe_allow_html=True)
-else:
-    cards = "".join(product_card(r) for _, r in high.head(12).iterrows())
-    st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
-    if len(high) > 12:
-        st.caption(f"+ {len(high) - 12} more products need action. Check the 'All products' tab for the full list.")
-
-if not medium.empty:
-    st.markdown(section("Keep an eye on", "Moderate risk: consider moving them to prominent shelves."),
-                unsafe_allow_html=True)
-    cards = "".join(product_card(r) for _, r in medium.head(8).iterrows())
-    st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
-    if len(medium) > 8:
-        st.caption(f"+ {len(medium) - 8} more products under watch in 'All products'.")
-
-if not safe.empty:
-    st.markdown(section("Looking fine", "These products have healthy sales velocity."),
-                unsafe_allow_html=True)
-    chips = "".join(
-        f'<span>{icon_for(p)} {html.escape(str(p))}</span>' for p in safe["product"].head(20)
-    )
-    st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# Interactive Tools & Modules
-# ------------------------------------------------------------------
-st.markdown(section("Interactive Tools", "Inspect inventory, test single products, chat with AI, or view metrics."),
-            unsafe_allow_html=True)
-tab_table, tab_predict, tab_chat, tab_perf = st.tabs(
-    ["📋 All products", "🔍 Try a product", "💬 Ask the assistant", "📊 Model accuracy"]
-)
-
-with tab_table:
-    f_col, _ = st.columns([1, 3])
-    level = f_col.selectbox("Filter by risk level", ["All"] + order)
-    view = data if level == "All" else data[data["risk"] == level]
-    shown = view.copy()
-    shown["product"] = shown["product"].map(lambda p: f"{icon_for(p)} {p}")
-    table_cols = ["product", "stock", "daily_sales", "days_left"]
-    if "price" in shown.columns:
-        table_cols += ["price", "est_loss"]
-    table_cols += ["wastage_chance", "risk", "action"]
-    show_df(
-        pretty(shown[table_cols]),
-        column_config={
-            "Wastage chance (%)": st.column_config.ProgressColumn(
-                "Chance of waste", min_value=0, max_value=100, format="%d%%"
-            ),
-            "Daily sales": st.column_config.NumberColumn(format="%.1f"),
-        },
-    )
-    st.download_button("📥 Download Current Report (CSV)", view.to_csv(index=False), "wastage_report.csv", "text/csv")
-
-with tab_predict:
-    col_form, col_res = st.columns(2, gap="large")
-    with col_form:
-        with st.form("single_product"):
-            st.markdown("#### Test a Single Product")
-            name = st.text_input("Product name", "Organic Alphonso Mangoes")
-            a, b = st.columns(2)
-            stock_in = a.number_input("Stock quantity", min_value=0, value=30, step=1)
-            sales_in = b.number_input("Sold per day", min_value=0.0, value=2.0, step=0.5)
-            c, d = st.columns(2)
-            days_in = c.number_input("Days left to expiry", min_value=0, value=5, step=1)
-            price_in = d.number_input("Price per unit (₹)", min_value=0.0, value=80.0, step=5.0)
-            go = st.form_submit_button("Predict Expiry Risk", type="primary")
-    with col_res:
-        if go:
-            single = pd.DataFrame(
-                [{"product": name or "Product", "stock": stock_in, "daily_sales": sales_in,
-                  "days_left": days_in, "price": price_in}]
-            )
-            res = add_predictions(single, high_thr, med_thr).iloc[0]
-            expected = sales_in * days_in
-            left_units = max(stock_in - expected, 0)
-            st.markdown(f'<div class="grid">{product_card(res)}</div>', unsafe_allow_html=True)
-            st.caption(f"Projected sales: {expected:.0f} units before expiry | "
-                       f"Estimated leftover: {left_units:.0f} units (₹{left_units * price_in:,.0f}).")
-        else:
-            st.markdown('<div class="empty">Enter product details on the left and click '
-                        '<b>Predict Expiry Risk</b> to see the AI diagnosis.</div>', unsafe_allow_html=True)
-
-with tab_chat:
-    if "messages" not in st.session_state:
-        st.session_state.messages = [
-            {"role": "assistant",
-             "text": "Hello! I am your FreshWatch assistant. Ask me anything about stock, discounts, expiring items, or financial risk.",
-             "table": None}
-        ]
-
-    st.markdown("##### Quick Queries")
-    q_cols = st.columns(4)
-    quick = ["Which products are at high risk?", "What should I discount today?",
-             "What is expiring soon?", "How much money is at risk?"]
-    clicked = None
-    for col, text in zip(q_cols, quick):
-        if col.button(text, key=f"q_{text}"):
-            clicked = text
-
-    typed = st.chat_input("Type your question (e.g., 'What is most urgent?' or 'Show money at risk')")
-    question = clicked or typed
-    if question:
-        st.session_state.messages.append({"role": "user", "text": question, "table": None})
-        answer, table = chatbot_reply(question, data)
-        st.session_state.messages.append({"role": "assistant", "text": answer, "table": table})
-
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["text"])
-            if msg["table"] is not None:
-                show_df(msg["table"])
-
-with tab_perf:
-    rf_row = next(m for m in metrics["comparison"] if m["model"] == "Random Forest")
-    st.markdown(
-        f"**Accuracy:** The Random Forest model achieved **{round(rf_row['accuracy'] * 100)}% accuracy** "
-        f"on {metrics['test_rows']:,} unseen supermarket test records."
-    )
-    p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Accuracy", f"{rf_row['accuracy'] * 100:.1f}%", help="Share of all predictions that were correct")
-    p2.metric("Precision", f"{rf_row['precision'] * 100:.1f}%", help="When it flags high risk, how often it is truly at risk")
-    p3.metric("Recall", f"{rf_row['recall'] * 100:.1f}%", help="Percentage of actual wasted items successfully caught")
-    p4.metric("F1-score", f"{rf_row['f1'] * 100:.1f}%", help="Harmonic balance between precision and recall")
-
-    g1, g2 = st.columns(2, gap="large")
-    with g1:
-        st.markdown(section("Confusion Matrix", "Evaluated on the 20% test partition."),
-                    unsafe_allow_html=True)
-        cm = metrics["confusion_matrix"]
-        cm_table = pd.DataFrame(
-            {
-                "Actual Status": ["Actually Sold", "Actually Wasted"],
-                "Predicted Sold": [cm[0][0], cm[1][0]],
-                "Predicted Wasted": [cm[0][1], cm[1][1]],
-            }
-        )
-        show_df(cm_table)
-    with g2:
-        st.markdown(section("Feature Importance", "Which parameters weigh the most in predictions:"),
-                    unsafe_allow_html=True)
-        nice = {"stock": "Stock Quantity", "daily_sales": "Daily Sales", "days_left": "Days Left",
-                "expected_sales": "Expected Sales", "leftover": "Leftover Units"}
-        imp = pd.DataFrame(
-            {"Feature": [nice[k] for k in metrics["feature_importance"]],
-             "Importance": list(metrics["feature_importance"].values())}
-        )
-        axis_color = "#cbd5d0" if is_dark else "#1f2a24"
-        imp_chart = (
-            alt.Chart(imp)
-            .mark_bar(size=16, cornerRadiusEnd=4, color=GREEN)
-            .encode(
-                x=alt.X("Importance:Q", axis=None),
-                y=alt.Y("Feature:N", sort="-x", title=None,
-                        axis=alt.Axis(labelColor=axis_color, labelFontSize=12)),
-                tooltip=["Feature", "Importance"]
-            )
-            .properties(height=200)
-            .configure_axis(grid=False, domain=False, ticks=False)
-            .configure_view(strokeWidth=0)
-        )
-        show_chart(imp_chart)
-
-    st.markdown(section("Model Benchmarks", "Comparison across three machine learning algorithms:"),
-                unsafe_allow_html=True)
-    comp = pd.DataFrame(metrics["comparison"]).rename(
-        columns={"model": "Model", "accuracy": "Accuracy", "precision": "Precision",
-                 "recall": "Recall", "f1": "F1-score"}
-    )
-    for c in ["Accuracy", "Precision", "Recall", "F1-score"]:
-        comp[c] = (comp[c] * 100).round(1)
-    show_df(comp, column_config={c: st.column_config.NumberColumn(format="%.1f%%")
-                                 for c in ["Accuracy", "Precision", "Recall", "F1-score"]})
-
-st.markdown(
-    '<div class="foot"><b>FreshWatch</b> · Supermarket Expiry & Wastage Prediction System · '
-    "Built with Python, Scikit-Learn & Streamlit</div>",
-    unsafe_allow_html=True,
-)
+        for k, n,
