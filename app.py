@@ -1,17 +1,3 @@
-st.markdown(
-    """
-<style>
-.stApp span[data-testid="stIconMaterial"] {
-    font-family: "Material Symbols Rounded", "Material Symbols Outlined" !important;
-    font-weight: normal !important;
-    font-style: normal !important;
-    letter-spacing: normal !important;
-    text-transform: none !important;
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
 import html
 import json
 import re
