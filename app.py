@@ -870,3 +870,4 @@ def health_bar(n_high, n_med, n_safe):
     legend = "".join(
         f'<span><i style="background:{PALETTE[k]["main"]}"></i>{label} · {n}</span>'
         for k, n,
+    )
