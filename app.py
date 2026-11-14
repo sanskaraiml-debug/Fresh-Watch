@@ -1,3 +1,4 @@
+import datetime
 import html
 import json
 import re
@@ -8,6 +9,30 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="FreshWatch", page_icon="🥬", layout="wide")
+
+# ==================================================================
+# ✏️ EDIT THIS BLOCK: your details for the website footer
+# Keep the quotes "" . If you leave a value empty, it is simply not shown.
+# ==================================================================
+OWNER_NAME = "Sanskar Jaiswal"
+OWNER_ROLE = "Owner & Developer"
+OWNER_BIO = (
+    "AIML engineering student and developer of intelligent web applications. "
+    "I created FreshWatch to demonstrate how machine learning and predictive analytics "
+    "can help retailers reduce food waste."
+)
+COMPANY_TAGLINE = "Smarter shelves. Less waste."
+COMPANY_ABOUT = (
+    "~ FreshWatch is a predictive analytics platform for perishable inventory. "
+    "~ Its machine learning model scores every product on its likelihood of expiring unsold, "
+    "~ estimates the financial exposure, and recommends timely actions such as markdowns, "
+    "~ combo offers or supplier returns, helping retailers cut shrinkage and protect margins."
+)
+EMAIL = "sanskaraiml@gmail.com"         # example: "yourname@gmail.com"
+INSTAGRAM = "sanskaarr.r"     # only your username, example: "sanskar.codes"
+LINKEDIN_URL = "https://www.linkedin.com/in/sanskar-jaiswal-a59467380"  # full link, example: "https://www.linkedin.com/in/yourname"
+GITHUB_URL = "https://github.com/sanskaraiml-debug"    # full link, example: "https://github.com/yourname"
+# ==================================================================
 
 # ------------------------------------------------------------------
 # Session memory for products the user adds
@@ -564,6 +589,85 @@ div[data-baseweb="select"] * {{
     padding-top: 20px;
 }}
 
+/* ---------- SITE FOOTER ---------- */
+.sitefoot {{
+    margin-top: 64px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 22px;
+    overflow: hidden;
+}}
+.sitefoot .sf-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 34px;
+    padding: 36px 40px 30px 40px;
+}}
+.sitefoot .sf-logo {{
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.6rem;
+    font-weight: 600;
+    color: var(--ink) !important;
+}}
+.sitefoot .sf-tag {{
+    color: var(--primary) !important;
+    font-weight: 700;
+    font-size: .78rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-top: 4px;
+}}
+.sitefoot .sf-h {{
+    font-weight: 700;
+    font-size: .78rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink) !important;
+    margin-bottom: 12px;
+}}
+.sitefoot .sf-text {{
+    color: var(--muted) !important;
+    font-size: .92rem;
+    line-height: 1.6;
+}}
+.sitefoot .sf-owner {{
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--ink) !important;
+}}
+.sitefoot .sf-role {{
+    color: var(--primary) !important;
+    font-size: .82rem;
+    font-weight: 600;
+    margin: 2px 0 10px 0;
+}}
+.sitefoot a.sf-link {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--ink) !important;
+    text-decoration: none !important;
+    font-size: .92rem;
+    padding: 6px 0;
+    word-break: break-all;
+}}
+.sitefoot a.sf-link:hover {{
+    color: var(--primary) !important;
+}}
+.sitefoot a.sf-link svg {{
+    width: 18px;
+    height: 18px;
+    flex: none;
+}}
+.sitefoot .sf-bottom {{
+    border-top: 1px solid var(--line);
+    padding: 16px 40px;
+    color: var(--muted) !important;
+    font-size: .82rem;
+    text-align: center;
+}}
+
 /* ---------- ICON FONT FIX (keeps upload / arrow / chat icons from showing as text) ---------- */
 .stApp [data-testid="stIconMaterial"],
 .stApp span[data-testid="stIconMaterial"],
@@ -1066,10 +1170,60 @@ safe = data[data["risk"] == "Safe"]
 order = ["High", "Medium", "Safe"]
 
 
+SVG_OPEN = ('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round">')
+ICON_MAIL = SVG_OPEN + '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>'
+ICON_INSTAGRAM = (SVG_OPEN + '<rect width="20" height="20" x="2" y="2" rx="5" ry="5"/>'
+                  '<path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>'
+                  '<line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>')
+ICON_LINKEDIN = (SVG_OPEN + '<path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/>'
+                 '<rect width="4" height="12" x="2" y="9"/><circle cx="4" cy="4" r="2"/></svg>')
+ICON_GITHUB = (SVG_OPEN + '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/>'
+               '<path d="M9 18c-4.51 2-5-2-7-2"/></svg>')
+
+
+def footer_link(href, icon, label):
+    return (f'<a class="sf-link" href="{html.escape(href, quote=True)}" target="_blank" '
+            f'rel="noopener noreferrer">{icon}<span>{html.escape(label)}</span></a>')
+
+
 def page_footer():
+    """Website footer: about the company, about the owner and contact links."""
+    links = []
+    email = EMAIL.strip()
+    if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        links.append(footer_link(f"mailto:{email}", ICON_MAIL, email))
+    handle = INSTAGRAM.strip().lstrip("@")
+    if re.fullmatch(r"[A-Za-z0-9._]{1,30}", handle):
+        links.append(footer_link(f"https://www.instagram.com/{handle}", ICON_INSTAGRAM, f"@{handle}"))
+    for url, icon, label in ((LINKEDIN_URL, ICON_LINKEDIN, "LinkedIn"), (GITHUB_URL, ICON_GITHUB, "GitHub")):
+        url = url.strip()
+        if url.lower().startswith(("http://", "https://")):
+            links.append(footer_link(url, icon, label))
+
+    columns = [
+        '<div><div class="sf-logo">🥬 FreshWatch</div>'
+        f'<div class="sf-tag">{html.escape(COMPANY_TAGLINE)}</div></div>',
+        f'<div><div class="sf-h">About the company</div><div class="sf-text">{html.escape(COMPANY_ABOUT)}</div></div>',
+    ]
+    if OWNER_NAME.strip():
+        role = f'<div class="sf-role">{html.escape(OWNER_ROLE)}</div>' if OWNER_ROLE.strip() else ""
+        columns.append(
+            '<div><div class="sf-h">About the owner</div>'
+            f'<div class="sf-owner">{html.escape(OWNER_NAME)}</div>{role}'
+            f'<div class="sf-text">{html.escape(OWNER_BIO)}</div></div>'
+        )
+    if links:
+        columns.append('<div><div class="sf-h">Get in touch</div>' + "".join(links) + "</div>")
+
+    built_by = f" · Built by {html.escape(OWNER_NAME)}" if OWNER_NAME.strip() else ""
+    year = datetime.date.today().year
     st.markdown(
-        '<div class="foot"><b>FreshWatch</b> · Supermarket Expiry & Wastage Prediction System · '
-        "Built with Python, Scikit-Learn & Streamlit</div>",
+        flat(
+            '<div class="sitefoot"><div class="sf-grid">' + "".join(columns) + "</div>"
+            f'<div class="sf-bottom">© {year} FreshWatch. All rights reserved.{built_by} · '
+            "Python, Scikit-Learn &amp; Streamlit</div></div>"
+        ),
         unsafe_allow_html=True,
     )
 
