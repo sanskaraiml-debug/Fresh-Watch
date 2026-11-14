@@ -18,6 +18,8 @@ if "last_added" not in st.session_state:
     st.session_state.last_added = None
 if "add_msg" not in st.session_state:
     st.session_state.add_msg = None
+if "entry_version" not in st.session_state:
+    st.session_state.entry_version = 0
 
 # ------------------------------------------------------------------
 # Sidebar: Theme Selection (Dark by default)
@@ -151,13 +153,15 @@ footer, #MainMenu {{
     display: none !important;
 }}
 
+/* Top bar (holds the page tabs) */
 header[data-testid="stHeader"] {{
-    background: transparent !important;
+    background: var(--bg) !important;
+    border-bottom: 1px solid var(--line) !important;
 }}
 
 .block-container {{
     max-width: 1200px;
-    padding-top: 1.6rem;
+    padding-top: 5rem;
     padding-bottom: 3.5rem;
 }}
 
@@ -290,6 +294,9 @@ header[data-testid="stHeader"] {{
     color: var(--muted) !important;
     font-size: .93rem;
     margin-top: 2px;
+}}
+.sec.first {{
+    margin-top: 6px;
 }}
 
 /* ---------- PRODUCT CARDS ---------- */
@@ -592,6 +599,13 @@ def show_chart(chart):
         st.altair_chart(chart, use_container_width=True)
 
 
+def show_editor(df, **kwargs):
+    try:
+        return st.data_editor(df, width="stretch", hide_index=True, **kwargs)
+    except Exception:
+        return st.data_editor(df, use_container_width=True, hide_index=True, **kwargs)
+
+
 @st.cache_resource
 def load_model_and_metrics():
     """Load the saved model. If files are missing or incompatible, retrain automatically."""
@@ -766,8 +780,45 @@ def load_inventory(uploaded):
 
 
 # ------------------------------------------------------------------
-# "Add my product" logic (runs as callbacks, before the page redraws)
+# "Add my product" logic
 # ------------------------------------------------------------------
+def parse_number(text):
+    """Turn typed text into a number. Returns None if blank or not a number."""
+    s = str(text).strip().replace(",", "")
+    if s == "":
+        return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def rows_from_entry(table):
+    """Read the typed entry table. Returns (list of products, list of problems)."""
+    rows, problems = [], []
+    for i, r in table.reset_index(drop=True).iterrows():
+        name = "" if pd.isna(r["Product"]) else str(r["Product"]).strip()
+        stock, sales, days, price = r["Stock"], r["Sales per day"], r["Days left"], r["Price"]
+        if not name and all(pd.isna(v) for v in (stock, sales, days, price)):
+            continue  # completely blank row
+        if not name:
+            problems.append(f"Row {i + 1}: the product name is missing")
+            continue
+        if any(pd.isna(v) for v in (stock, sales, days)):
+            problems.append(f"Row {i + 1} ({name}): please fill stock, sales per day and days left")
+            continue
+        rows.append(
+            {
+                "product": name,
+                "stock": int(stock),
+                "daily_sales": float(sales),
+                "days_left": int(days),
+                "price": float(price) if pd.notna(price) else float("nan"),
+            }
+        )
+    return rows, problems
+
+
 def upsert_my_products(rows):
     """Add products to the user's list. Same name = update that product."""
     index = {p["product"].strip().lower(): i for i, p in enumerate(st.session_state.my_products)}
@@ -780,30 +831,10 @@ def upsert_my_products(rows):
             index[key] = len(st.session_state.my_products) - 1
 
 
-def add_product_callback():
-    name = str(st.session_state.get("np_name", "")).strip()
-    if not name:
-        st.session_state.add_msg = ("error", "Please type a product name first.")
-        return
-    row = {
-        "product": name,
-        "stock": int(st.session_state.np_stock),
-        "daily_sales": float(st.session_state.np_sales),
-        "days_left": int(st.session_state.np_days),
-        "price": float(st.session_state.np_price),
-    }
-    upsert_my_products([row])
-    st.session_state.last_added = row
-    st.session_state.add_msg = ("success", f"Added “{name}” to your inventory. It now shows in the lists above.")
-    st.session_state.np_name = ""
-
-
 def remove_product_callback():
     name = st.session_state.get("rm_name")
     st.session_state.my_products = [p for p in st.session_state.my_products if p["product"] != name]
-    last = st.session_state.last_added
-    if last is not None and last["product"] == name:
-        st.session_state.last_added = None
+    st.session_state.last_added = None
 
 
 def clear_products_callback():
@@ -874,8 +905,9 @@ def health_bar(n_high, n_med, n_safe):
     return flat(f'<div class="health">{segs}</div><div class="legend">{legend}</div>')
 
 
-def section(title, sub):
-    return flat(f'<div class="sec"><div class="st">{title}</div><div class="ss">{sub}</div></div>')
+def section(title, sub, first=False):
+    cls = "sec first" if first else "sec"
+    return flat(f'<div class="{cls}"><div class="st">{title}</div><div class="ss">{sub}</div></div>')
 
 
 def product_card(r):
@@ -970,6 +1002,16 @@ def chatbot_reply(question, data):
 # ------------------------------------------------------------------
 # Sidebar: Inventory & Settings
 # ------------------------------------------------------------------
+def read_threshold(label, default, low, high_limit, key):
+    """A typed box for a percentage. Falls back to the default if the text is not valid."""
+    text = st.text_input(label, value=str(default), key=key)
+    value = parse_number(text)
+    if value is None or value < low or value > high_limit:
+        st.caption(f"Type a number between {low} and {high_limit}. Using {default} for now.")
+        return default
+    return int(value)
+
+
 with st.sidebar:
     st.markdown("---")
     st.markdown("### 📦 Inventory Data")
@@ -986,8 +1028,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ⚙️ Alert Thresholds")
-    high_thr = st.number_input("Act today risk threshold (%)", min_value=50, max_value=95, value=80, step=5)
-    med_thr = st.number_input("Keep watching risk threshold (%)", min_value=10, max_value=90, value=50, step=5)
+    high_thr = read_threshold("Act today risk threshold (%)", 80, 50, 95, "thr_high")
+    med_thr = read_threshold("Keep watching risk threshold (%)", 50, 10, 90, "thr_med")
     if med_thr >= high_thr:
         med_thr = high_thr - 5
         st.caption("Adjusted so watch level remains below action level.")
@@ -1023,97 +1065,133 @@ medium = data[data["risk"] == "Medium"]
 safe = data[data["risk"] == "Safe"]
 order = ["High", "Medium", "Safe"]
 
-# ------------------------------------------------------------------
-# Top of page (Hero & KPI Tiles)
-# ------------------------------------------------------------------
-st.markdown(HERO, unsafe_allow_html=True)
 
-t1, t2, t3, t4 = st.columns(4)
-t1.markdown(tile("Act today", len(high), "urgent discount / return", PALETTE["High"]["main"]),
-            unsafe_allow_html=True)
-t2.markdown(tile("Keep watching", len(medium), "moderate wastage risk", PALETTE["Medium"]["main"]),
-            unsafe_allow_html=True)
-t3.markdown(tile("Looking fine", len(safe), "expected to sell fully", PALETTE["Safe"]["main"]),
-            unsafe_allow_html=True)
-if "est_loss" in high.columns:
-    t4.markdown(tile("Money at risk", f"₹{int(high['est_loss'].sum()):,}", "in critical items", "#e67e22"),
-                unsafe_allow_html=True)
-else:
-    t4.markdown(tile("Units at risk", int(high["stock"].sum()), "units in critical items", "#e67e22"),
-                unsafe_allow_html=True)
-
-st.markdown(health_bar(len(high), len(medium), len(safe)), unsafe_allow_html=True)
-
-# ------------------------------------------------------------------
-# Product cards: Visual Shelf Alerts
-# ------------------------------------------------------------------
-st.markdown(section("Act today", "These items are projected to expire before selling out."), unsafe_allow_html=True)
-if high.empty:
-    st.markdown('<div class="empty">🎉 Nothing urgent today! Your inventory shelves are healthy.</div>',
-                unsafe_allow_html=True)
-else:
-    cards = "".join(product_card(r) for _, r in high.head(12).iterrows())
-    st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
-    if len(high) > 12:
-        st.caption(f"+ {len(high) - 12} more products need action. Check the 'All products' tab for the full list.")
-
-if not medium.empty:
-    st.markdown(section("Keep an eye on", "Moderate risk: consider moving them to prominent shelves."),
-                unsafe_allow_html=True)
-    cards = "".join(product_card(r) for _, r in medium.head(8).iterrows())
-    st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
-    if len(medium) > 8:
-        st.caption(f"+ {len(medium) - 8} more products under watch in 'All products'.")
-
-if not safe.empty:
-    st.markdown(section("Looking fine", "These products have healthy sales velocity."),
-                unsafe_allow_html=True)
-    chips = "".join(
-        f'<span>{icon_for(p)} {html.escape(str(p))}{" ★" if m else ""}</span>'
-        for p, m in zip(safe["product"].head(20), safe["mine"].head(20))
+def page_footer():
+    st.markdown(
+        '<div class="foot"><b>FreshWatch</b> · Supermarket Expiry & Wastage Prediction System · '
+        "Built with Python, Scikit-Learn & Streamlit</div>",
+        unsafe_allow_html=True,
     )
-    st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
 
-# ------------------------------------------------------------------
-# Interactive Tools & Modules
-# ------------------------------------------------------------------
-st.markdown(section("Interactive Tools", "Add your products, inspect inventory, test a product, chat with AI, or view metrics."),
-            unsafe_allow_html=True)
-tab_add, tab_table, tab_predict, tab_chat, tab_perf = st.tabs(
-    ["➕ Add my product", "📋 All products", "🔍 Try a product", "💬 Ask the assistant", "📊 Model accuracy"]
-)
 
-# ---------------- Add my product ----------------
-with tab_add:
-    col_form, col_res = st.columns(2, gap="large")
-    with col_form:
-        with st.form("add_product_form"):
-            st.markdown("#### Add your own product")
-            st.text_input("Product name", key="np_name", placeholder="e.g. Brown Bread (400g)")
-            a, b = st.columns(2)
-            a.number_input("Stock quantity", min_value=0, value=20, step=1, key="np_stock")
-            b.number_input("Average sales per day", min_value=0.0, value=2.0, step=0.5, key="np_sales")
-            c, d = st.columns(2)
-            c.number_input("Days left to expiry", min_value=0, value=7, step=1, key="np_days")
-            d.number_input("Price per unit (₹)", min_value=0.0, value=50.0, step=5.0, key="np_price")
-            st.form_submit_button("Add to my inventory", type="primary", on_click=add_product_callback)
+# ==================================================================
+# PAGE: Home
+# ==================================================================
+def page_home():
+    st.markdown(HERO, unsafe_allow_html=True)
 
-    with col_res:
-        msg = st.session_state.add_msg
-        if msg:
-            if msg[0] == "success":
-                st.success(msg[1])
-            else:
-                st.error(msg[1])
-            st.session_state.add_msg = None
-        last = st.session_state.last_added
-        if last is not None:
-            preview = add_predictions(pd.DataFrame([{**last, "mine": True}]), high_thr, med_thr).iloc[0]
-            st.markdown(f'<div class="grid">{product_card(preview)}</div>', unsafe_allow_html=True)
+    t1, t2, t3, t4 = st.columns(4)
+    t1.markdown(tile("Act today", len(high), "urgent discount / return", PALETTE["High"]["main"]),
+                unsafe_allow_html=True)
+    t2.markdown(tile("Keep watching", len(medium), "moderate wastage risk", PALETTE["Medium"]["main"]),
+                unsafe_allow_html=True)
+    t3.markdown(tile("Looking fine", len(safe), "expected to sell fully", PALETTE["Safe"]["main"]),
+                unsafe_allow_html=True)
+    if "est_loss" in high.columns:
+        t4.markdown(tile("Money at risk", f"₹{int(high['est_loss'].sum()):,}", "in critical items", "#e67e22"),
+                    unsafe_allow_html=True)
+    else:
+        t4.markdown(tile("Units at risk", int(high["stock"].sum()), "units in critical items", "#e67e22"),
+                    unsafe_allow_html=True)
+
+    st.markdown(health_bar(len(high), len(medium), len(safe)), unsafe_allow_html=True)
+
+    st.markdown(section("Act today", "These items are projected to expire before selling out."),
+                unsafe_allow_html=True)
+    if high.empty:
+        st.markdown('<div class="empty">🎉 Nothing urgent today! Your inventory shelves are healthy.</div>',
+                    unsafe_allow_html=True)
+    else:
+        cards = "".join(product_card(r) for _, r in high.head(12).iterrows())
+        st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
+        if len(high) > 12:
+            st.caption(f"+ {len(high) - 12} more products need action. Open the 'All products' tab for the full list.")
+
+    if not medium.empty:
+        st.markdown(section("Keep an eye on", "Moderate risk: consider moving them to prominent shelves."),
+                    unsafe_allow_html=True)
+        cards = "".join(product_card(r) for _, r in medium.head(8).iterrows())
+        st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
+        if len(medium) > 8:
+            st.caption(f"+ {len(medium) - 8} more products under watch in 'All products'.")
+
+    if not safe.empty:
+        st.markdown(section("Looking fine", "These products have healthy sales velocity."),
+                    unsafe_allow_html=True)
+        chips = "".join(
+            f'<span>{icon_for(p)} {html.escape(str(p))}{" ★" if m else ""}</span>'
+            for p, m in zip(safe["product"].head(20), safe["mine"].head(20))
+        )
+        st.markdown(f'<div class="chips">{chips}</div>', unsafe_allow_html=True)
+
+    page_footer()
+
+
+# ==================================================================
+# PAGE: Add my product
+# ==================================================================
+def page_add():
+    st.markdown(section("Add my product",
+                        "Type your products into the table like a spreadsheet, then press Add. "
+                        "The table clears so you can start fresh.", first=True),
+                unsafe_allow_html=True)
+
+    msg = st.session_state.add_msg
+    if msg:
+        if msg[0] == "success":
+            st.success(msg[1])
         else:
-            st.markdown('<div class="empty">Fill in the form and press <b>Add to my inventory</b>. '
-                        "Your product will get a prediction here and join the lists above.</div>",
-                        unsafe_allow_html=True)
+            st.error(msg[1])
+        st.session_state.add_msg = None
+
+    blank = pd.DataFrame(
+        {
+            "Product": pd.Series([None] * 5, dtype="object"),
+            "Stock": pd.Series([None] * 5, dtype="float"),
+            "Sales per day": pd.Series([None] * 5, dtype="float"),
+            "Days left": pd.Series([None] * 5, dtype="float"),
+            "Price": pd.Series([None] * 5, dtype="float"),
+        }
+    )
+    entry = show_editor(
+        blank,
+        num_rows="dynamic",
+        key=f"entry_table_{st.session_state.entry_version}",
+        column_config={
+            "Product": st.column_config.TextColumn("Product name", width="large"),
+            "Stock": st.column_config.NumberColumn("Stock quantity", min_value=0, step=1, format="%d"),
+            "Sales per day": st.column_config.NumberColumn("Average sales per day", min_value=0.0, format="%.1f"),
+            "Days left": st.column_config.NumberColumn("Days left to expiry", min_value=0, step=1, format="%d"),
+            "Price": st.column_config.NumberColumn("Price per unit (₹)", min_value=0.0, format="%.0f"),
+        },
+    )
+    st.caption("Click a cell and type. Press Enter or Tab to move on. Price is optional. "
+               "Need more rows? Click the empty row at the bottom of the table.")
+
+    if st.button("Add to my inventory", type="primary", key="btn_add_products"):
+        rows, problems = rows_from_entry(entry)
+        if problems:
+            st.error("Please fix this first: " + " | ".join(problems))
+        elif not rows:
+            st.error("Type at least one product in the table first.")
+        else:
+            upsert_my_products(rows)
+            st.session_state.last_added = rows
+            names = ", ".join(r["product"] for r in rows)
+            st.session_state.add_msg = (
+                "success",
+                f"Added {len(rows)} product(s): {names}. They now show on the Home and All products tabs.",
+            )
+            st.session_state.entry_version += 1  # clears the table for the next entry
+            st.rerun()
+
+    last = st.session_state.last_added
+    if last:
+        st.markdown(section("Just added", "Here is what the model says about your new products."),
+                    unsafe_allow_html=True)
+        preview = add_predictions(pd.DataFrame([{**row, "mine": True} for row in last]), high_thr, med_thr)
+        cards = "".join(product_card(r) for _, r in preview.iterrows())
+        st.markdown(f'<div class="grid">{cards}</div>', unsafe_allow_html=True)
 
     st.markdown(section("Your added products", "Products you added stay while this page is open."),
                 unsafe_allow_html=True)
@@ -1154,8 +1232,15 @@ with tab_add:
                 st.session_state.add_msg = ("success", f"Loaded {len(rows)} saved products.")
                 st.rerun()
 
-# ---------------- All products ----------------
-with tab_table:
+    page_footer()
+
+
+# ==================================================================
+# PAGE: All products
+# ==================================================================
+def page_products():
+    st.markdown(section("All products", "Every product with its risk, filterable and downloadable.", first=True),
+                unsafe_allow_html=True)
     f_col, _ = st.columns([1, 3])
     level = f_col.selectbox("Filter by risk level", ["All"] + order)
     view = data if level == "All" else data[data["risk"] == level]
@@ -1179,39 +1264,63 @@ with tab_table:
     st.caption("★ marks products you added yourself.")
     st.download_button("📥 Download Current Report (CSV)", view.drop(columns=["mine"]).to_csv(index=False),
                        "wastage_report.csv", "text/csv")
+    page_footer()
 
-# ---------------- Try a product ----------------
-with tab_predict:
+
+# ==================================================================
+# PAGE: Try a product
+# ==================================================================
+def page_try():
+    st.markdown(section("Try a product", "Check any product without adding it to your inventory.", first=True),
+                unsafe_allow_html=True)
     col_form, col_res = st.columns(2, gap="large")
     with col_form:
         with st.form("single_product"):
-            st.markdown("#### Test a Single Product")
-            name = st.text_input("Product name", "Organic Alphonso Mangoes")
+            name = st.text_input("Product name", placeholder="e.g. Organic Alphonso Mangoes")
             a, b = st.columns(2)
-            stock_in = a.number_input("Stock quantity", min_value=0, value=30, step=1)
-            sales_in = b.number_input("Sold per day", min_value=0.0, value=2.0, step=0.5)
+            stock_txt = a.text_input("Stock quantity", placeholder="e.g. 30")
+            sales_txt = b.text_input("Sold per day", placeholder="e.g. 2")
             c, d = st.columns(2)
-            days_in = c.number_input("Days left to expiry", min_value=0, value=5, step=1)
-            price_in = d.number_input("Price per unit (₹)", min_value=0.0, value=80.0, step=5.0)
+            days_txt = c.text_input("Days left to expiry", placeholder="e.g. 5")
+            price_txt = d.text_input("Price per unit (₹)", placeholder="e.g. 80 (optional)")
             go = st.form_submit_button("Predict Expiry Risk", type="primary")
     with col_res:
         if go:
-            single = pd.DataFrame(
-                [{"product": name or "Product", "stock": stock_in, "daily_sales": sales_in,
-                  "days_left": days_in, "price": price_in}]
-            )
-            res = add_predictions(single, high_thr, med_thr).iloc[0]
-            expected = sales_in * days_in
-            left_units = max(stock_in - expected, 0)
-            st.markdown(f'<div class="grid">{product_card(res)}</div>', unsafe_allow_html=True)
-            st.caption(f"Projected sales: {expected:.0f} units before expiry | "
-                       f"Estimated leftover: {left_units:.0f} units (₹{left_units * price_in:,.0f}).")
+            stock_in = parse_number(stock_txt)
+            sales_in = parse_number(sales_txt)
+            days_in = parse_number(days_txt)
+            price_in = parse_number(price_txt)
+            missing = [label for label, v in [("stock", stock_in), ("sold per day", sales_in),
+                                              ("days left", days_in)] if v is None or v < 0]
+            if missing:
+                st.error("Please type a valid number for: " + ", ".join(missing) + ".")
+            else:
+                price_val = price_in if (price_in is not None and price_in >= 0) else float("nan")
+                single = pd.DataFrame(
+                    [{"product": name.strip() or "Product", "stock": stock_in, "daily_sales": sales_in,
+                      "days_left": days_in, "price": price_val}]
+                )
+                res = add_predictions(single, high_thr, med_thr).iloc[0]
+                expected = sales_in * days_in
+                left_units = max(stock_in - expected, 0)
+                st.markdown(f'<div class="grid">{product_card(res)}</div>', unsafe_allow_html=True)
+                note = (f"Projected sales: {expected:.0f} units before expiry | "
+                        f"Estimated leftover: {left_units:.0f} units")
+                if pd.notna(price_val):
+                    note += f" (₹{left_units * price_val:,.0f})"
+                st.caption(note + ".")
         else:
-            st.markdown('<div class="empty">Enter product details on the left and click '
+            st.markdown('<div class="empty">Type the product details on the left and click '
                         '<b>Predict Expiry Risk</b> to see the AI diagnosis.</div>', unsafe_allow_html=True)
+    page_footer()
 
-# ---------------- Chat ----------------
-with tab_chat:
+
+# ==================================================================
+# PAGE: Ask the assistant
+# ==================================================================
+def page_chat():
+    st.markdown(section("Ask the assistant", "Ask in plain words about your stock, discounts and risk.", first=True),
+                unsafe_allow_html=True)
     if "messages" not in st.session_state:
         st.session_state.messages = [
             {"role": "assistant",
@@ -1240,9 +1349,15 @@ with tab_chat:
             st.markdown(msg["text"])
             if msg["table"] is not None:
                 show_df(msg["table"])
+    page_footer()
 
-# ---------------- Model accuracy ----------------
-with tab_perf:
+
+# ==================================================================
+# PAGE: Model accuracy
+# ==================================================================
+def page_accuracy():
+    st.markdown(section("Model accuracy", "How well the model predicts on products it has never seen.", first=True),
+                unsafe_allow_html=True)
     rf_row = next(m for m in metrics["comparison"] if m["model"] == "Random Forest")
     st.markdown(
         f"**Accuracy:** The Random Forest model achieved **{round(rf_row['accuracy'] * 100)}% accuracy** "
@@ -1302,9 +1417,22 @@ with tab_perf:
         comp[c] = (comp[c] * 100).round(1)
     show_df(comp, column_config={c: st.column_config.NumberColumn(format="%.1f%%")
                                  for c in ["Accuracy", "Precision", "Recall", "F1-score"]})
+    page_footer()
 
-st.markdown(
-    '<div class="foot"><b>FreshWatch</b> · Supermarket Expiry & Wastage Prediction System · '
-    "Built with Python, Scikit-Learn & Streamlit</div>",
-    unsafe_allow_html=True,
-)
+
+# ==================================================================
+# Top navigation: one click opens each page
+# ==================================================================
+pages = [
+    st.Page(page_home, title="Home", icon="🏠", default=True),
+    st.Page(page_add, title="Add my product", icon="➕", url_path="add-my-product"),
+    st.Page(page_products, title="All products", icon="📋", url_path="all-products"),
+    st.Page(page_try, title="Try a product", icon="🔍", url_path="try-a-product"),
+    st.Page(page_chat, title="Ask the assistant", icon="💬", url_path="assistant"),
+    st.Page(page_accuracy, title="Model accuracy", icon="📊", url_path="model-accuracy"),
+]
+try:
+    nav = st.navigation(pages, position="top")
+except TypeError:
+    nav = st.navigation(pages)
+nav.run()
