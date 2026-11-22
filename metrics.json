@@ -1,0 +1,51 @@
+{
+  "train_rows": 4000,
+  "test_rows": 1000,
+  "features": [
+    "stock",
+    "daily_sales",
+    "days_left",
+    "expected_sales",
+    "leftover"
+  ],
+  "comparison": [
+    {
+      "model": "Logistic Regression",
+      "accuracy": 0.955,
+      "precision": 0.9467,
+      "recall": 0.9444,
+      "f1": 0.9456
+    },
+    {
+      "model": "Decision Tree",
+      "accuracy": 0.949,
+      "precision": 0.9481,
+      "recall": 0.9275,
+      "f1": 0.9377
+    },
+    {
+      "model": "Random Forest",
+      "accuracy": 0.956,
+      "precision": 0.9469,
+      "recall": 0.9469,
+      "f1": 0.9469
+    }
+  ],
+  "confusion_matrix": [
+    [
+      564,
+      22
+    ],
+    [
+      22,
+      392
+    ]
+  ],
+  "feature_importance": {
+    "stock": 0.0646,
+    "daily_sales": 0.037,
+    "days_left": 0.0675,
+    "expected_sales": 0.2323,
+    "leftover": 0.5987
+  }
+}

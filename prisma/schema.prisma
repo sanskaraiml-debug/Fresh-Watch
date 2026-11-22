@@ -1,0 +1,104 @@
+// FreshWatch Prisma Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id                     String                  @id @default(cuid())
+  productId              String                  @unique
+  name                   String
+  category               String
+  quantity               Float
+  unit                   String                  @default("units")
+  purchasePrice          Float
+  sellingPrice           Float
+  stockDate              DateTime                @default(now())
+  expiryDate             DateTime
+  dailySalesRate         Float
+  supplier               String?
+  storageCondition       String                  @default("Ambient")
+  imageUrl               String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+
+  predictions            Prediction[]
+  alerts                 Alert[]
+  pricingRecommendations PricingRecommendation[]
+
+  @@index([category])
+  @@index([expiryDate])
+}
+
+model Prediction {
+  id                String   @id @default(cuid())
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  daysLeft          Int
+  expectedSales     Float
+  leftover          Float
+  wastageChance     Float
+  riskLevel         String   // "Low Risk", "Medium Risk", "High Risk"
+  potentialLoss     Float
+  recommendedAction String
+  predictedAt       DateTime @default(now())
+
+  @@index([productId])
+  @@index([riskLevel])
+}
+
+model Alert {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  riskLevel   String   // "High", "Medium", "Low"
+  resolved    Boolean  @default(false)
+  actionTaken String?
+  createdAt   DateTime @default(now())
+
+  @@index([productId])
+  @@index([resolved])
+}
+
+model PricingRecommendation {
+  id                   String   @id @default(cuid())
+  productId            String
+  product              Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  originalPrice        Float
+  suggestedPrice       Float
+  discountPct          Float
+  expectedRevenue      Float
+  potentialLossAvoided Float
+  reason               String
+  status               String   @default("Pending") // "Pending", "Applied", "Dismissed"
+  createdAt            DateTime @default(now())
+
+  @@index([productId])
+  @@index([status])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String   // "user", "assistant", "system"
+  content   String
+  language  String?  @default("en")
+  createdAt DateTime @default(now())
+}
+
+model StoreSetting {
+  id                  String   @id @default(cuid())
+  storeName           String   @default("FreshWatch Supermarket")
+  currency            String   @default("₹")
+  highRiskThreshold   Float    @default(75.0)
+  mediumRiskThreshold Float    @default(45.0)
+  autoDiscountEnabled Boolean  @default(true)
+  defaultDiscountPct  Float    @default(20.0)
+  updatedAt           DateTime @updatedAt
+}
