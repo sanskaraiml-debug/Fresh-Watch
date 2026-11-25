@@ -8,7 +8,7 @@ const groq = apiKey && apiKey !== "gsk_placeholder_replace_with_your_key"
   ? new Groq({ apiKey })
   : null;
 
-export async function askFreshWatchAssistant(
+export async function askInventoryAnalysisAssistant(
   prompt: string,
   chatHistory: Array<{ role: "user" | "assistant" | "system"; content: string }> = []
 ) {
@@ -52,7 +52,7 @@ export async function askFreshWatchAssistant(
   const highRiskItems = inventoryContext.filter((i) => i.riskLevel === "High Risk");
   const totalStock = inventoryContext.reduce((acc, i) => acc + i.stock, 0);
 
-  const systemInstruction = `You are the official FreshWatch Intelligent Supermarket Assistant and AI Calling Assistant.
+  const systemInstruction = `You are the official Inventory Analysis Intelligent Supermarket Assistant and AI Calling Assistant.
 You have direct, real-time access to the supermarket's live inventory database and machine learning expiry predictions.
 
 LIVE SUPERMARKET INVENTORY CONTEXT:
@@ -152,7 +152,7 @@ function generateGroundedLocalResponse(
   }
 
   // Default intelligent overview
-  return `### 🥬 FreshWatch Supermarket Assistant Report
+  return `### 🥬 Inventory Analysis Supermarket Assistant Report
 - **Tracked Inventory**: ${inventory.length} active supermarket SKUs
 - **Items Requiring Attention**: ${highRisk.length} high-risk items
 - **Potential Wastage Loss at Risk**: ₹${highRisk.reduce((a, b) => a + b.potentialLoss, 0)}

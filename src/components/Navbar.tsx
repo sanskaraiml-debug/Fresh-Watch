@@ -69,7 +69,7 @@ export default function Navbar({ onOpenDrawer }: NavbarProps) {
             </div>
             <div className="hidden sm:block">
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-lg text-slate-900 tracking-tight">FreshWatch</span>
+                <span className="font-bold text-lg text-slate-900 tracking-tight">Inventory Analysis</span>
                 <span className="text-[11px] font-medium text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded-full border border-emerald-200">
                   AI Retail
                 </span>

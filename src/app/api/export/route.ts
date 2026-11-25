@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="FreshWatch_Inventory_Report_${new Date().toISOString().slice(0, 10)}.csv"`,
+        "Content-Disposition": `attachment; filename="Inventory_Analysis_Report_${new Date().toISOString().slice(0, 10)}.csv"`,
       },
     });
   } catch (error: any) {

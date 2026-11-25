@@ -9,8 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 app = FastAPI(
-    title="FreshWatch ML Microservice",
-    description="Machine Learning Service exposing trained Random Forest expiry prediction models for FreshWatch",
+    title="Inventory Analysis ML Microservice",
+    description="Machine Learning Service exposing trained Random Forest expiry prediction models for Inventory Analysis",
     version="1.0.0",
 )
 
@@ -133,7 +133,7 @@ def compute_prediction(req: ItemPredictRequest) -> dict:
 @app.get("/")
 def root():
     return {
-        "name": "FreshWatch ML Prediction Microservice",
+        "name": "Inventory Analysis ML Prediction Microservice",
         "status": "online",
         "model_loaded": model is not None,
         "endpoints": ["/health", "/model-info", "/predict", "/batch-predict"],

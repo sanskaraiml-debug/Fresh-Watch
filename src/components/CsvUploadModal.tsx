@@ -122,7 +122,7 @@ export default function CsvUploadModal({ isOpen, onClose, onSuccess }: CsvUpload
         throw new Error(data.error || "Failed to import items.");
       }
 
-      setUploadStatus(`Success! Imported ${data.importedCount} products into FreshWatch.`);
+      setUploadStatus(`Success! Imported ${data.importedCount} products into Inventory Analysis.`);
       setTimeout(() => {
         onSuccess();
         onClose();

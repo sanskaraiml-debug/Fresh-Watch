@@ -15,7 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <title>FreshWatch — Supermarket Expiry & Wastage Prediction System</title>
+        <title>Inventory Analysis — Supermarket Expiry & Wastage Prediction System</title>
         <meta
           name="description"
           content="Enterprise AI-powered supermarket inventory management platform to predict expiry risk, dynamic markdowns, and food wastage reduction."
@@ -37,7 +37,7 @@ export default function RootLayout({
           <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
             <div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-slate-800">FreshWatch</span>
+                <span className="font-semibold text-slate-800">Inventory Analysis</span>
                 <span>— Predict. Prevent. Save.</span>
               </div>
               <div className="flex items-center gap-4 text-slate-600">

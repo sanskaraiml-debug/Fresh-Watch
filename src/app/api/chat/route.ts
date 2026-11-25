@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { askFreshWatchAssistant } from "@/lib/groq";
+import { askInventoryAnalysisAssistant } from "@/lib/groq";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     });
 
     // Query Groq with grounded inventory
-    const response = await askFreshWatchAssistant(prompt.trim(), history || []);
+    const response = await askInventoryAnalysisAssistant(prompt.trim(), history || []);
 
     // Save assistant response to database
     await prisma.chatMessage.create({

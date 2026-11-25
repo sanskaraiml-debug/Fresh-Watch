@@ -1,7 +1,7 @@
-# FreshWatch 🥬
+# Inventory Analysis 🥬
 ### Enterprise AI Supermarket Expiry & Wastage Prediction Platform
 
-FreshWatch is a commercial-grade, full-stack supermarket intelligence platform designed to eliminate food waste, detect perishable expiry risks, and maximize supermarket profitability through predictive machine learning and dynamic pricing markdowns.
+Inventory Analysis is a commercial-grade, full-stack supermarket intelligence platform designed to eliminate food waste, detect perishable expiry risks, and maximize supermarket profitability through predictive machine learning and dynamic pricing markdowns.
 
 ---
 
@@ -40,7 +40,7 @@ py -3.13 -m uvicorn ml_service.main:app --port 8000 --reload
 ```
 *Health Check: `http://127.0.0.1:8000/health`*
 
-### 2. Start the FreshWatch Next.js Web Application
+### 2. Start the Inventory Analysis Next.js Web Application
 ```powershell
 npm run start
 # Or for live development:
@@ -57,6 +57,6 @@ DATABASE_URL="file:./dev.db"
 GROQ_API_KEY="your_groq_api_key_here"
 GROQ_MODEL="llama-3.3-70b-versatile"
 ML_SERVICE_URL="http://127.0.0.1:8000"
-NEXT_PUBLIC_APP_NAME="FreshWatch"
+NEXT_PUBLIC_APP_NAME="Inventory Analysis"
 PORT=3000
 ```

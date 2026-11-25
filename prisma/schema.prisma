@@ -94,7 +94,7 @@ model ChatMessage {
 
 model StoreSetting {
   id                  String   @id @default(cuid())
-  storeName           String   @default("FreshWatch Supermarket")
+  storeName           String   @default("Inventory Analysis Supermarket")
   currency            String   @default("₹")
   highRiskThreshold   Float    @default(75.0)
   mediumRiskThreshold Float    @default(45.0)

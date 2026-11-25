@@ -96,7 +96,7 @@ export default function ReportsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-200 gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xl font-bold text-slate-900">FreshWatch Supermarket</span>
+              <span className="text-xl font-bold text-slate-900">Inventory Analysis Supermarket</span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
                 Official Audit Report
               </span>

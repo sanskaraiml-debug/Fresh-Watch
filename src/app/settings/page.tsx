@@ -16,7 +16,7 @@ import {
 
 export default function SettingsPage() {
   const [formData, setFormData] = useState({
-    storeName: "FreshWatch Supermarket",
+    storeName: "Inventory Analysis Supermarket",
     currency: "₹",
     highRiskThreshold: 75,
     mediumRiskThreshold: 45,

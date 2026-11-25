@@ -548,7 +548,7 @@ async function main() {
   console.log("Seeding default store settings...");
   await prisma.storeSetting.create({
     data: {
-      storeName: "FreshWatch Supermarket",
+      storeName: "Inventory Analysis Supermarket",
       currency: "₹",
       highRiskThreshold: 75.0,
       mediumRiskThreshold: 45.0,

@@ -31,7 +31,7 @@ export default function ChatAssistantPage() {
       id: "m0",
       role: "assistant",
       content:
-        "Hello! I am your FreshWatch AI Calling Assistant. I have live access to your supermarket's real-time inventory, stock counts, shelf-life dates, and Random Forest expiry predictions. You can speak to me or type your questions in English, Hindi, Spanish, or any language you prefer.",
+        "Hello! I am your Inventory Analysis AI Calling Assistant. I have live access to your supermarket's real-time inventory, stock counts, shelf-life dates, and Random Forest expiry predictions. You can speak to me or type your questions in English, Hindi, Spanish, or any language you prefer.",
       timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     },
   ]);
@@ -213,7 +213,7 @@ export default function ChatAssistantPage() {
       }
     } else {
       setIsCallActive(true);
-      speakText("FreshWatch AI calling assistant connected. How can I help with your supermarket inventory?");
+      speakText("Inventory Analysis AI calling assistant connected. How can I help with your supermarket inventory?");
     }
   };
 

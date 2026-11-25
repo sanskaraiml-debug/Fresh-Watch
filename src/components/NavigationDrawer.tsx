@@ -132,7 +132,7 @@ export default function NavigationDrawer({ isOpen, onClose }: NavigationDrawerPr
         className="relative z-50 flex h-full w-full max-w-xs flex-col bg-white shadow-2xl border-r border-slate-200 transition-transform duration-300 ease-out animate-slide-in-left"
         role="dialog"
         aria-modal="true"
-        aria-label="FreshWatch Navigation Menu"
+        aria-label="Inventory Analysis Navigation Menu"
       >
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-emerald-100 bg-emerald-900 text-white">
@@ -142,7 +142,7 @@ export default function NavigationDrawer({ isOpen, onClose }: NavigationDrawerPr
             </div>
             <div>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-lg tracking-tight text-white">FreshWatch</span>
+                <span className="font-bold text-lg tracking-tight text-white">Inventory Analysis</span>
                 <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-700/80 text-emerald-200 font-mono">v2.0</span>
               </div>
               <p className="text-xs text-emerald-200/80 font-normal">Supermarket Intelligence</p>
@@ -237,7 +237,7 @@ export default function NavigationDrawer({ isOpen, onClose }: NavigationDrawerPr
             </p>
           </div>
           <div className="mt-3 text-center text-[11px] text-slate-500">
-            FreshWatch SaaS Platform © 2026
+            Inventory Analysis SaaS Platform © 2026
           </div>
         </div>
       </div>

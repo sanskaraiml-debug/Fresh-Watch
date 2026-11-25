@@ -122,7 +122,7 @@ export default function DashboardPage() {
                 <span>Supermarket Inventory Intelligence</span>
               </div>
               <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white">
-                FreshWatch <span className="text-emerald-400 font-normal">🥬</span>
+                Inventory Analysis <span className="text-emerald-400 font-normal">🥬</span>
               </h1>
               <p className="mt-1 text-xl font-medium text-emerald-100">
                 Predict. Prevent. Save.
